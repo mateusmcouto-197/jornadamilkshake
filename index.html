@@ -3,13 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Planeta Shake - High Performance</title>
+    <title>Planeta Shake - High Performance v2</title>
     <style>
         * { 
             touch-action: none; 
             box-sizing: border-box; 
             -webkit-tap-highlight-color: transparent;
-            /* Otimização de renderização global */
             backface-visibility: hidden;
         }
         
@@ -23,7 +22,6 @@
             position: relative; width: 100vw; height: 100vh;
             background: radial-gradient(circle at center, #2e1a99 0%, #05051a 100%);
             overflow: hidden;
-            /* Força o uso da GPU para o container principal */
             transform: translateZ(0);
         }
 
@@ -56,8 +54,8 @@
             z-index: 10; left: 50%; 
             bottom: 120px; 
             transform: translateX(-50%) rotate(-30deg) translateZ(0); 
-            filter: drop-shadow(0 0 12px #00f2ff);
-            will-change: left, width, height; /* Informa ao navegador para otimizar a nave */
+            filter: drop-shadow(0 0 10px #00f2ff);
+            will-change: left, width, height;
         }
 
         .obj { 
@@ -65,12 +63,12 @@
             background-size: contain; 
             background-repeat: no-repeat; 
             z-index: 5; 
-            transform: translateZ(0); /* Aceleração de hardware em cada objeto */
+            transform: translateZ(0);
             will-change: top;
         }
         
-        .obj-milkshake { filter: drop-shadow(0 0 10px #fc845d); }
-        .obj-life { filter: drop-shadow(0 0 12px #00ff00); }
+        .obj-milkshake { filter: drop-shadow(0 0 8px #fc845d); }
+        .obj-life { filter: drop-shadow(0 0 10px #00ff00); }
 
         #msg { 
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -111,7 +109,6 @@
 <script>
     let audioCtx;
     let active = true;
-    let musicStarted = false;
     let spawnTimeout;
     
     const ship = document.getElementById('ship');
@@ -122,14 +119,14 @@
 
     let score = 0, lives = 2, speed = 6;
     
-    // Configurações de tamanho (Aplicando reduções solicitadas)
+    // Configurações de tamanho recalibradas
     const sizes = {
-        'planeta.png': 49,    // 70px - 30%
-        'venus.png': 59,      // 70px - 15%
-        'meteoro.png': 63,    // 70px - 10%
-        'foguete.png': 63,    // 70px - 10%
-        'milkshake': { w: 45, h: 58 }, // ~10% de redução (50x65 -> 45x58)
-        'vida': 36            // 40px - 10%
+        'planeta.png': 39,    // Redução adicional de 20% sobre os 49px anteriores
+        'venus.png': 59,      
+        'meteoro.png': 63,    
+        'foguete.png': 63,    
+        'milkshake': { w: 45, h: 58 }, 
+        'vida': 36            
     };
 
     function initAudio() {
@@ -138,7 +135,8 @@
     }
 
     function updateShipSize() {
-        const baseW = 70, baseH = 55;
+        const baseW = 59; // Redução de 15% (de 70 para 59.5, arredondado para 59)
+        const baseH = 46; // Redução proporcional de 15% (de 55 para 46.7, arredondado para 46)
         const mult = 1 + (Math.max(0, lives - 1) * 0.1);
         ship.style.width = (baseW * mult) + 'px';
         ship.style.height = (baseH * mult) + 'px';
@@ -155,7 +153,8 @@
         initAudio();
         if(!active) return;
         const clientX = (e.type.includes('touch') ? e.touches[0].clientX : e.clientX);
-        let targetX = clientX - container.getBoundingClientRect().left;
+        const rect = container.getBoundingClientRect();
+        let targetX = clientX - rect.left;
         let hw = ship.offsetWidth / 2;
         targetX = Math.max(hw, Math.min(container.offsetWidth - hw, targetX));
         ship.style.left = targetX + 'px';
@@ -192,7 +191,8 @@
         }
         
         obj.dataset.type = type;
-        obj.style.left = Math.random() * (container.offsetWidth - 50) + 'px';
+        // Ajuste para não spawnar colado na borda direita com os novos tamanhos
+        obj.style.left = Math.random() * (container.offsetWidth - 60) + 'px';
         obj.style.top = '-80px';
         container.appendChild(obj);
 
@@ -205,7 +205,8 @@
             const s = ship.getBoundingClientRect();
             const o = obj.getBoundingClientRect();
             
-            if (s.left < o.right-5 && s.right > o.left+5 && s.top < o.bottom-5 && s.bottom > o.top+5) {
+            // Colisão milimétrica ajustada para os novos tamanhos reduzidos
+            if (s.left < o.right-3 && s.right > o.left+3 && s.top < o.bottom-3 && s.bottom > o.top+3) {
                 if(type === 'bad') {
                     lives--;
                     if(lives <= 0) gameOver();
@@ -251,14 +252,12 @@
         spawn();
     }
 
-    // Aceleração progressiva mais suave para manter o peso leve
     setInterval(() => { if(active && speed < 15) speed += 0.3; }, 4000);
 
     updateShipSize();
     spawn();
 
-    // Estrelas otimizadas
-    for(let i=0; i<25; i++) {
+    for(let i=0; i<30; i++) {
         let star = document.createElement('div');
         star.className = 'star';
         star.style.width = star.style.height = Math.random()*2+'px';
