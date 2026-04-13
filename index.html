@@ -3,9 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Planeta Shake - Fullscreen</title>
+    <title>Planeta Shake - High Performance</title>
     <style>
-        * { touch-action: none; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        * { 
+            touch-action: none; 
+            box-sizing: border-box; 
+            -webkit-tap-highlight-color: transparent;
+            /* Otimização de renderização global */
+            backface-visibility: hidden;
+        }
         
         html, body { 
             margin: 0; padding: 0; width: 100%; height: 100%; 
@@ -17,6 +23,8 @@
             position: relative; width: 100vw; height: 100vh;
             background: radial-gradient(circle at center, #2e1a99 0%, #05051a 100%);
             overflow: hidden;
+            /* Força o uso da GPU para o container principal */
+            transform: translateZ(0);
         }
 
         #main-logo {
@@ -24,7 +32,6 @@
             transform: translateX(-50%);
             width: 100px; height: auto;
             z-index: 15; opacity: 0.8;
-            filter: drop-shadow(0 0 10px rgba(252, 132, 93, 0.3));
             pointer-events: none;
         }
 
@@ -34,7 +41,6 @@
             z-index: 30; text-shadow: 2px 2px #000;
         }
 
-        /* Redução estratégica do tamanho do placar para evitar conflito */
         .orange-ui { color: #fc845d; font-weight: 900; font-size: 1.1rem; margin-bottom: 3px; }
 
         #lives-container { display: flex; gap: 4px; min-height: 20px; }
@@ -44,33 +50,27 @@
             background-size: contain; background-repeat: no-repeat; 
         }
 
-        #btn-fullscreen {
-            position: absolute; top: 15px; left: 15px;
-            padding: 6px 10px; background: rgba(255,255,255,0.1);
-            color: #fff; border: 1px solid #fff; border-radius: 5px;
-            font-size: 0.6rem; cursor: pointer; z-index: 40;
-        }
-
         #ship {
             position: absolute; 
             background-image: url('nave.png'); background-size: contain; background-repeat: no-repeat;
             z-index: 10; left: 50%; 
             bottom: 120px; 
-            /* Angulação de -30deg (5 graus a mais no anti-horário) */
-            transform: translateX(-50%) rotate(-30deg); 
+            transform: translateX(-50%) rotate(-30deg) translateZ(0); 
             filter: drop-shadow(0 0 12px #00f2ff);
-            transition: width 0.3s ease, height 0.3s ease, filter 0.3s ease-out;
+            will-change: left, width, height; /* Informa ao navegador para otimizar a nave */
         }
 
-        #ship.glow-milkshake { filter: drop-shadow(0 0 35px #fc845d) brightness(1.4); }
-        #ship.glow-life { filter: drop-shadow(0 0 35px #00ff00) brightness(1.4); }
-
-        .obj { position: absolute; background-size: contain; background-repeat: no-repeat; z-index: 5; }
-        .obj-milkshake { filter: drop-shadow(0 0 12px #fc845d); animation: pulse-orange 0.6s infinite alternate; }
-        .obj-life { filter: drop-shadow(0 0 15px #00ff00) brightness(1.2); }
+        .obj { 
+            position: absolute; 
+            background-size: contain; 
+            background-repeat: no-repeat; 
+            z-index: 5; 
+            transform: translateZ(0); /* Aceleração de hardware em cada objeto */
+            will-change: top;
+        }
         
-        @keyframes pulse-orange { from { transform: scale(1); } to { transform: scale(1.1); } }
-        .star { position: absolute; background: #f8f9f9; border-radius: 50%; z-index: 0; opacity: 0.6; }
+        .obj-milkshake { filter: drop-shadow(0 0 10px #fc845d); }
+        .obj-life { filter: drop-shadow(0 0 12px #00ff00); }
 
         #msg { 
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -78,16 +78,17 @@
             color: #f8f9f9; text-align: center; display: none; z-index: 50; width: 90%; max-width: 400px;
             border: 3px solid #4f2bd0;
         }
+
         .restart-btn { 
             padding: 18px 36px; background: #fc845d; border: none; 
             font-weight: bold; border-radius: 50px; font-size: 1.3rem; 
             color: #fff; cursor: pointer; margin-top: 25px; width: 100%;
         }
+
+        .star { position: absolute; background: #fff; border-radius: 50%; z-index: 0; opacity: 0.4; }
     </style>
 </head>
 <body>
-
-    <button id="btn-fullscreen" onclick="toggleFullScreen()">TELA CHEIA</button>
 
     <div id="game-container">
         <img src="logo.png" id="main-logo" alt="Planeta Shake">
@@ -100,9 +101,9 @@
         <div id="ship"></div>
 
         <div id="msg">
-            <img src="logo.png" style="width: 140px; margin-bottom: 10px;">
-            <h1 style="color: #fc845d; margin: 0;">COLISÃO FATAL!</h1>
-            <p id="final-stats" style="font-size: 1.4rem;"></p>
+            <img src="logo.png" style="width: 120px; margin-bottom: 10px;">
+            <h1 style="color: #fc845d; margin: 0; font-size: 1.8rem;">COLISÃO FATAL!</h1>
+            <p id="final-stats" style="font-size: 1.2rem;"></p>
             <button class="restart-btn" onclick="resetGame()">REINICIAR</button>
         </div>
     </div>
@@ -112,61 +113,7 @@
     let active = true;
     let musicStarted = false;
     let spawnTimeout;
-
-    function toggleFullScreen() {
-        if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch(err => {
-                console.log("Erro ao entrar em tela cheia.");
-            });
-            document.getElementById('btn-fullscreen').style.display = 'none';
-        }
-    }
-
-    function initAudio() {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        if (!musicStarted) { startMainTheme(); musicStarted = true; }
-    }
-
-    function playNote(freq, type, start, duration, vol) {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = type;
-        osc.frequency.setValueAtTime(freq, start);
-        gain.gain.setValueAtTime(vol, start);
-        gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start(start);
-        osc.stop(start + duration);
-    }
-
-    function startMainTheme() {
-        const sequence = [{f: 329, d: 0.2}, {f: 392, d: 0.2}, {f: 523, d: 0.2}, {f: 392, d: 0.2}, {f: 440, d: 0.2}, {f: 523, d: 0.2}, {f: 587, d: 0.2}, {f: 523, d: 0.2}];
-        let i = 0;
-        function loop() {
-            if (!active) return;
-            playNote(sequence[i].f, 'square', audioCtx.currentTime, 0.3, 0.05);
-            i = (i + 1) % sequence.length;
-            setTimeout(loop, 250); 
-        }
-        loop();
-    }
-
-    const sfx = {
-        collect: () => playNote(880, 'sine', audioCtx.currentTime, 0.2, 0.2),
-        life: () => {
-            const now = audioCtx.currentTime;
-            playNote(523, 'sine', now, 0.1, 0.2); playNote(659, 'sine', now + 0.1, 0.1, 0.2); playNote(783, 'sine', now + 0.2, 0.2, 0.2);
-        },
-        damage: () => playNote(100, 'sawtooth', audioCtx.currentTime, 0.4, 0.3),
-        gameOver: () => {
-            const now = audioCtx.currentTime;
-            const sad = [440, 392, 349, 329, 261];
-            sad.forEach((f, idx) => playNote(f, 'square', now + (idx * 0.25), 0.5, 0.15));
-        }
-    };
-
+    
     const ship = document.getElementById('ship');
     const container = document.getElementById('game-container');
     const scoreDisp = document.getElementById('score');
@@ -174,17 +121,27 @@
     const msg = document.getElementById('msg');
 
     let score = 0, lives = 2, speed = 6;
-    const obstacles = ['planeta.png', 'venus.png', 'meteoro.png', 'foguete.png'];
     
-    // Base de tamanho: 70x55 (referência de 1 vida)
+    // Configurações de tamanho (Aplicando reduções solicitadas)
+    const sizes = {
+        'planeta.png': 49,    // 70px - 30%
+        'venus.png': 59,      // 70px - 15%
+        'meteoro.png': 63,    // 70px - 10%
+        'foguete.png': 63,    // 70px - 10%
+        'milkshake': { w: 45, h: 58 }, // ~10% de redução (50x65 -> 45x58)
+        'vida': 36            // 40px - 10%
+    };
+
+    function initAudio() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+
     function updateShipSize() {
-        const baseWidth = 70;
-        const baseHeight = 55;
-        // Aumenta 10% para cada vida além da primeira
-        const multiplier = 1 + (Math.max(0, lives - 1) * 0.1);
-        
-        ship.style.width = (baseWidth * multiplier) + 'px';
-        ship.style.height = (baseHeight * multiplier) + 'px';
+        const baseW = 70, baseH = 55;
+        const mult = 1 + (Math.max(0, lives - 1) * 0.1);
+        ship.style.width = (baseW * mult) + 'px';
+        ship.style.height = (baseH * mult) + 'px';
         
         livesContainer.innerHTML = '';
         for (let i = 0; i < lives; i++) {
@@ -194,22 +151,13 @@
         }
     }
 
-    for(let i=0; i<40; i++) {
-        let star = document.createElement('div');
-        star.className = 'star';
-        star.style.width = star.style.height = Math.random()*3+'px';
-        star.style.left = Math.random()*100+'%'; star.style.top = Math.random()*100+'%';
-        container.appendChild(star);
-    }
-
     function handleInput(e) {
         initAudio();
         if(!active) return;
         const clientX = (e.type.includes('touch') ? e.touches[0].clientX : e.clientX);
-        let targetX = clientX;
+        let targetX = clientX - container.getBoundingClientRect().left;
         let hw = ship.offsetWidth / 2;
-        if(targetX < hw) targetX = hw;
-        if(targetX > container.offsetWidth - hw) targetX = container.offsetWidth - hw;
+        targetX = Math.max(hw, Math.min(container.offsetWidth - hw, targetX));
         ship.style.left = targetX + 'px';
     }
 
@@ -223,69 +171,74 @@
         const rand = Math.random();
         obj.className = 'obj';
         
+        let type, img;
         if(rand < 0.30) { 
+            type = 'milkshake';
             obj.style.backgroundImage = "url('milkshake.png')";
-            obj.style.width = '50px'; obj.style.height = '65px';
-            obj.classList.add('obj-milkshake'); obj.dataset.type = 'milkshake';
+            obj.style.width = sizes.milkshake.w + 'px';
+            obj.style.height = sizes.milkshake.h + 'px';
+            obj.classList.add('obj-milkshake');
         } else if (rand < 0.40) { 
+            type = 'life';
             obj.style.backgroundImage = "url('vida.png')"; 
-            obj.style.width = '40px'; obj.style.height = '40px';
-            obj.classList.add('obj-life'); obj.dataset.type = 'life';
+            obj.style.width = obj.style.height = sizes.vida + 'px';
+            obj.classList.add('obj-life');
         } else { 
-            obj.style.backgroundImage = `url('${obstacles[Math.floor(Math.random()*obstacles.length)]}')`;
-            obj.style.width = obj.style.height = '70px';
-            obj.dataset.type = 'bad';
+            type = 'bad';
+            const obs = ['planeta.png', 'venus.png', 'meteoro.png', 'foguete.png'];
+            img = obs[Math.floor(Math.random()*obs.length)];
+            obj.style.backgroundImage = `url('${img}')`;
+            obj.style.width = obj.style.height = sizes[img] + 'px';
         }
         
-        obj.style.left = Math.random() * (container.offsetWidth - 70) + 'px';
-        obj.style.top = '-100px';
+        obj.dataset.type = type;
+        obj.style.left = Math.random() * (container.offsetWidth - 50) + 'px';
+        obj.style.top = '-80px';
         container.appendChild(obj);
 
-        let tp = -100;
-        let mv = setInterval(() => {
-            if(!active) {
-                obj.remove();
-                return clearInterval(mv);
-            }
-            tp += speed; obj.style.top = tp + 'px';
+        let tp = -80;
+        function move() {
+            if(!active) { obj.remove(); return; }
+            tp += speed;
+            obj.style.top = tp + 'px';
             
-            let s = ship.getBoundingClientRect(), o = obj.getBoundingClientRect();
+            const s = ship.getBoundingClientRect();
+            const o = obj.getBoundingClientRect();
             
             if (s.left < o.right-5 && s.right > o.left+5 && s.top < o.bottom-5 && s.bottom > o.top+5) {
-                if(obj.dataset.type === 'bad') {
-                    lives--; sfx.damage(); 
-                    if(lives <= 0) { livesContainer.innerHTML = ''; gameOver(); } 
-                    else { updateShipSize(); }
-                } else if (obj.dataset.type === 'milkshake') {
-                    score++; sfx.collect(); scoreDisp.innerText = score;
-                    ship.classList.add('glow-milkshake');
-                    setTimeout(() => ship.classList.remove('glow-milkshake'), 300);
-                } else if (obj.dataset.type === 'life') {
-                    if(lives < 3) { 
-                        lives++; 
-                        updateShipSize();
-                        sfx.life(); 
-                        ship.classList.add('glow-life');
-                        setTimeout(() => ship.classList.remove('glow-life'), 300);
-                    }
+                if(type === 'bad') {
+                    lives--;
+                    if(lives <= 0) gameOver();
+                    else updateShipSize();
+                } else if (type === 'milkshake') {
+                    score++;
+                    scoreDisp.innerText = score;
+                } else if (type === 'life' && lives < 3) {
+                    lives++;
+                    updateShipSize();
                 }
-                obj.remove(); clearInterval(mv);
+                obj.remove();
+                return;
             }
-            if(tp > window.innerHeight + 100) { clearInterval(mv); obj.remove(); }
-        }, 16);
-        spawnTimeout = setTimeout(spawn, Math.random() * 400 + 400);
+
+            if(tp > window.innerHeight) {
+                obj.remove();
+            } else {
+                requestAnimationFrame(move);
+            }
+        }
+        requestAnimationFrame(move);
+        spawnTimeout = setTimeout(spawn, Math.random() * 400 + 500);
     }
 
     function gameOver() {
         active = false;
         clearTimeout(spawnTimeout);
-        sfx.gameOver();
         msg.style.display = 'block';
-        document.getElementById('final-stats').innerText = `Você coletou ${score} shakes!`;
+        document.getElementById('final-stats').innerText = `Total: ${score} shakes coletados!`;
         ship.style.opacity = '0.2';
     }
 
-    // Função estratégica para reiniciar sem sair da tela cheia
     function resetGame() {
         active = true;
         score = 0;
@@ -298,9 +251,20 @@
         spawn();
     }
 
-    setInterval(() => { if(active && speed < 18) speed += 0.5; }, 3000);
+    // Aceleração progressiva mais suave para manter o peso leve
+    setInterval(() => { if(active && speed < 15) speed += 0.3; }, 4000);
+
     updateShipSize();
     spawn();
+
+    // Estrelas otimizadas
+    for(let i=0; i<25; i++) {
+        let star = document.createElement('div');
+        star.className = 'star';
+        star.style.width = star.style.height = Math.random()*2+'px';
+        star.style.left = Math.random()*100+'%'; star.style.top = Math.random()*100+'%';
+        container.appendChild(star);
+    }
 </script>
 </body>
 </html>
