@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Planeta Shake - Fullscreen</title>
+    <style>
+        * { touch-action: none; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        
+        html, body { 
+            margin: 0; padding: 0; width: 100%; height: 100%; 
+            background: #020205; overflow: hidden; 
+            display: flex; flex-direction: column;
+        }
+
+        #game-container { 
+            position: relative; width: 100vw; height: 100vh;
+            background: radial-gradient(circle at center, #2e1a99 0%, #05051a 100%);
+            overflow: hidden;
+        }
+
+        #main-logo {
+            position: absolute; top: 15px; left: 50%;
+            transform: translateX(-50%);
+            width: 120px; height: auto;
+            z-index: 15; opacity: 0.8;
+            filter: drop-shadow(0 0 10px rgba(252, 132, 93, 0.3));
+            pointer-events: none;
+        }
+
+        #ui-right-cluster {
+            position: absolute; top: 20px; right: 20px;
+            display: flex; flex-direction: column; align-items: flex-end;
+            z-index: 30; text-shadow: 2px 2px #000;
+        }
+
+        .orange-ui { color: #fc845d; font-weight: 900; font-size: 1.6rem; margin-bottom: 5px; }
+
+        #lives-container { display: flex; gap: 5px; min-height: 30px; }
+        .life-icon { 
+            width: 25px; height: 25px; 
+            background-image: url('vida.png'); 
+            background-size: contain; background-repeat: no-repeat; 
+        }
+
+        #btn-fullscreen {
+            position: absolute; top: 20px; left: 20px;
+            padding: 8px 12px; background: rgba(255,255,255,0.1);
+            color: #fff; border: 1px solid #fff; border-radius: 5px;
+            font-size: 0.7rem; cursor: pointer; z-index: 40;
+        }
+
+        #ship {
+            position: absolute; 
+            background-image: url('nave.png'); background-size: contain; background-repeat: no-repeat;
+            z-index: 10; left: 50%; 
+            bottom: 120px; 
+            transform: translateX(-50%) rotate(-25deg); 
+            filter: drop-shadow(0 0 12px #00f2ff);
+            transition: width 0.3s ease, height 0.3s ease, filter 0.3s ease-out;
+        }
+
+        #ship.glow-milkshake { filter: drop-shadow(0 0 35px #fc845d) brightness(1.4); }
+        #ship.glow-life { filter: drop-shadow(0 0 35px #00ff00) brightness(1.4); }
+
+        .obj { position: absolute; background-size: contain; background-repeat: no-repeat; z-index: 5; }
+        .obj-milkshake { filter: drop-shadow(0 0 12px #fc845d); animation: pulse-orange 0.6s infinite alternate; }
+        
+        /* BRILHO VERDE DA VIDA VOLTOU */
+        .obj-life { filter: drop-shadow(0 0 15px #00ff00) brightness(1.2); }
+        
+        @keyframes pulse-orange { from { transform: scale(1); } to { transform: scale(1.1); } }
+        .star { position: absolute; background: #f8f9f9; border-radius: 50%; z-index: 0; opacity: 0.6; }
+
+        #msg { 
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(5, 5, 26, 0.98); padding: 40px; border-radius: 25px;
+            color: #f8f9f9; text-align: center; display: none; z-index: 50; width: 90%; max-width: 400px;
+            border: 3px solid #4f2bd0;
+        }
+        .restart-btn { 
+            padding: 18px 36px; background: #fc845d; border: none; 
+            font-weight: bold; border-radius: 50px; font-size: 1.3rem; 
+            color: #fff; cursor: pointer; margin-top: 25px; width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+    <button id="btn-fullscreen" onclick="toggleFullScreen()">TELA CHEIA</button>
+
+    <div id="game-container">
+        <img src="logo.png" id="main-logo" alt="Planeta Shake">
+
+        <div id="ui-right-cluster">
+            <div class="orange-ui">SHAKES: <span id="score">0</span></div>
+            <div id="lives-container"></div>
+        </div>
+
+        <div id="ship"></div>
+
+        <div id="msg">
+            <img src="logo.png" style="width: 140px; margin-bottom: 10px;">
+            <h1 style="color: #fc845d; margin: 0;">COLISÃO FATAL!</h1>
+            <p id="final-stats" style="font-size: 1.4rem;"></p>
+            <button class="restart-btn" onclick="location.reload()">REINICIAR</button>
+        </div>
+    </div>
+
+<script>
+    let audioCtx;
+    let active = true;
+    let musicStarted = false;
+
+    function toggleFullScreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.log("Erro ao entrar em tela cheia.");
+            });
+            document.getElementById('btn-fullscreen').style.display = 'none';
+        }
+    }
+
+    function initAudio() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        if (!musicStarted) { startMainTheme(); musicStarted = true; }
+    }
+
+    function playNote(freq, type, start, duration, vol) {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(vol, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(start);
+        osc.stop(start + duration);
+    }
+
+    function startMainTheme() {
+        const sequence = [{f: 329, d: 0.2}, {f: 392, d: 0.2}, {f: 523, d: 0.2}, {f: 392, d: 0.2}, {f: 440, d: 0.2}, {f: 523, d: 0.2}, {f: 587, d: 0.2}, {f: 523, d: 0.2}];
+        let i = 0;
+        function loop() {
+            if (!active) return;
+            playNote(sequence[i].f, 'square', audioCtx.currentTime, 0.3, 0.05);
+            i = (i + 1) % sequence.length;
+            setTimeout(loop, 250); 
+        }
+        loop();
+    }
+
+    const sfx = {
+        collect: () => playNote(880, 'sine', audioCtx.currentTime, 0.2, 0.2),
+        life: () => {
+            const now = audioCtx.currentTime;
+            playNote(523, 'sine', now, 0.1, 0.2); playNote(659, 'sine', now + 0.1, 0.1, 0.2); playNote(783, 'sine', now + 0.2, 0.2, 0.2);
+        },
+        damage: () => playNote(100, 'sawtooth', audioCtx.currentTime, 0.4, 0.3),
+        gameOver: () => {
+            const now = audioCtx.currentTime;
+            const sad = [440, 392, 349, 329, 261];
+            sad.forEach((f, idx) => playNote(f, 'square', now + (idx * 0.25), 0.5, 0.15));
+        }
+    };
+
+    const ship = document.getElementById('ship');
+    const container = document.getElementById('game-container');
+    const scoreDisp = document.getElementById('score');
+    const livesContainer = document.getElementById('lives-container');
+    const msg = document.getElementById('msg');
+
+    let score = 0, lives = 2, speed = 6;
+    const obstacles = ['planeta.png', 'venus.png', 'meteoro.png', 'foguete.png'];
+    const shipSizes = { 1: { w: 70, h: 55 }, 2: { w: 100, h: 80 }, 3: { w: 140, h: 110 } };
+
+    function updateShipSize() {
+        const size = shipSizes[lives] || shipSizes[1];
+        ship.style.width = size.w + 'px';
+        ship.style.height = size.h + 'px';
+        livesContainer.innerHTML = '';
+        for (let i = 0; i < lives; i++) {
+            const icon = document.createElement('div');
+            icon.className = 'life-icon';
+            livesContainer.appendChild(icon);
+        }
+    }
+
+    for(let i=0; i<40; i++) {
+        let star = document.createElement('div');
+        star.className = 'star';
+        star.style.width = star.style.height = Math.random()*3+'px';
+        star.style.left = Math.random()*100+'%'; star.style.top = Math.random()*100+'%';
+        container.appendChild(star);
+    }
+
+    function handleInput(e) {
+        initAudio();
+        if(!active) return;
+        const clientX = (e.type.includes('touch') ? e.touches[0].clientX : e.clientX);
+        let targetX = clientX;
+        let hw = ship.offsetWidth / 2;
+        if(targetX < hw) targetX = hw;
+        if(targetX > container.offsetWidth - hw) targetX = container.offsetWidth - hw;
+        ship.style.left = targetX + 'px';
+    }
+
+    container.addEventListener('mousemove', handleInput);
+    container.addEventListener('touchstart', handleInput);
+    container.addEventListener('touchmove', (e) => { e.preventDefault(); handleInput(e); }, {passive: false});
+
+    function spawn() {
+        if(!active) return;
+        const obj = document.createElement('div');
+        const rand = Math.random();
+        obj.className = 'obj';
+        
+        if(rand < 0.30) { 
+            obj.style.backgroundImage = "url('milkshake.png')";
+            obj.style.width = '50px'; obj.style.height = '65px';
+            obj.classList.add('obj-milkshake'); obj.dataset.type = 'milkshake';
+        } else if (rand < 0.40) { 
+            obj.style.backgroundImage = "url('vida.png')"; 
+            obj.style.width = '40px'; obj.style.height = '40px';
+            obj.classList.add('obj-life'); obj.dataset.type = 'life';
+        } else { 
+            obj.style.backgroundImage = `url('${obstacles[Math.floor(Math.random()*obstacles.length)]}')`;
+            obj.style.width = obj.style.height = '70px';
+            obj.dataset.type = 'bad';
+        }
+        
+        obj.style.left = Math.random() * (container.offsetWidth - 70) + 'px';
+        obj.style.top = '-100px';
+        container.appendChild(obj);
+
+        let tp = -100;
+        let mv = setInterval(() => {
+            if(!active) return clearInterval(mv);
+            tp += speed; obj.style.top = tp + 'px';
+            
+            let s = ship.getBoundingClientRect(), o = obj.getBoundingClientRect();
+            
+            // Colisão com margem mais amigável
+            if (s.left < o.right-5 && s.right > o.left+5 && s.top < o.bottom-5 && s.bottom > o.top+5) {
+                if(obj.dataset.type === 'bad') {
+                    lives--; sfx.damage(); 
+                    if(lives <= 0) { livesContainer.innerHTML = ''; gameOver(); } 
+                    else { updateShipSize(); }
+                } else if (obj.dataset.type === 'milkshake') {
+                    score++; sfx.collect(); scoreDisp.innerText = score;
+                    ship.classList.add('glow-milkshake');
+                    setTimeout(() => ship.classList.remove('glow-milkshake'), 300);
+                } else if (obj.dataset.type === 'life') {
+                    if(lives < 3) { 
+                        lives++; 
+                        updateShipSize();
+                        sfx.life(); 
+                        ship.classList.add('glow-life');
+                        setTimeout(() => ship.classList.remove('glow-life'), 300);
+                    }
+                }
+                obj.remove(); clearInterval(mv);
+            }
+            if(tp > window.innerHeight + 100) { clearInterval(mv); obj.remove(); }
+        }, 16);
+        setTimeout(spawn, Math.random() * 400 + 400);
+    }
+
+    function gameOver() {
+        active = false;
+        sfx.gameOver();
+        msg.style.display = 'block';
+        document.getElementById('final-stats').innerText = `Você coletou ${score} shakes!`;
+        ship.style.opacity = '0.2';
+    }
+
+    setInterval(() => { if(active && speed < 18) speed += 0.5; }, 3000);
+    updateShipSize();
+    spawn();
+</script>
+</body>
+</html>
